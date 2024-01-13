@@ -95,6 +95,21 @@ def bot(message, history, aws_access, aws_secret, aws_token, temperature, max_to
 
     return "", history
 
+
+def import_history(history, file):
+    with open(file.name, mode="rb") as f:
+        content = f.read()
+
+        if isinstance(content, bytes):
+            content = content.decode('utf-8', 'replace')
+        else:
+            content = str(content)
+
+    # Deserialize the JSON content to history
+    history = json.loads(content)
+    # The history is returned and will be set to the chatbot component
+    return history
+
 with gr.Blocks() as demo:
     gr.Markdown("# Amazon™️ Bedrock™️ Chat™️ (Nils' Version™️) feat. Anthropic™️ Claude-2™️")
 
@@ -162,6 +177,28 @@ with gr.Blocks() as demo:
             dmp_btn = gr.Button("Dump")
             txt_dmp = gr.Textbox("Dump")
             dmp_btn.click(dump, inputs=[chatbot], outputs=[txt_dmp])
+
+    with gr.Accordion("Import/Export", open = False):
+        import_button = gr.UploadButton("Import")
+        export_button = gr.Button("Export")
+        export_button.click(lambda: None, [chatbot], js="""
+            (chat_history) => {
+                // Convert the chat history to a JSON string
+                const history_json = JSON.stringify(chat_history);
+                // Create a Blob from the JSON string
+                const blob = new Blob([history_json], {type: 'application/json'});
+                // Create a download link
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'chat_history.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+            """)
+        import_button.upload(import_history, inputs=[chatbot, import_button], outputs=[chatbot])
 
     txt_msg = txt.submit(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
         bot, [txt, chatbot, aws_access, aws_secret, aws_token, temp, max_tokens], [txt, chatbot],
