@@ -53,7 +53,7 @@ def process_values_js():
     }
     """
 
-def bot(message, history, aws_access, aws_secret, aws_token, temperature, max_tokens):
+def bot(message, history, aws_access, aws_secret, aws_token, temperature, max_tokens, model, region):
     try:
         prompt = "\n\n"
         for human, assi in history:
@@ -78,10 +78,10 @@ def bot(message, history, aws_access, aws_secret, aws_token, temperature, max_to
             aws_access_key_id=aws_access,
             aws_secret_access_key=aws_secret,
             aws_session_token=aws_token,
-            region_name='eu-central-1')
+            region_name=region)
         br = sess.client(service_name="bedrock-runtime")
 
-        response = br.invoke_model(body=body, modelId="anthropic.claude-v2",
+        response = br.invoke_model(body=body, modelId=f"anthropic.{model}",
                                 accept="application/json", contentType="application/json")
         response_body = json.loads(response.get('body').read())
         br_result = response_body.get('completion')
@@ -117,14 +117,18 @@ with gr.Blocks() as demo:
         aws_access = gr.Textbox(label="AWS Access Key", elem_id="aws_access")
         aws_secret = gr.Textbox(label="AWS Secret Key", elem_id="aws_secret")
         aws_token = gr.Textbox(label="AWS Session Token", elem_id="aws_token")
+        model = gr.Dropdown(label="Model", value="claude-v2:1", allow_custom_value=True, elem_id="model",
+                            choices=["claude-v2:1", "claude-v2"])
+        region = gr.Dropdown(label="Region", value="eu-central-1", allow_custom_value=True, elem_id="region",
+                            choices=["eu-central-1", "us-east-1", "us-west-1"])
         temp = gr.Slider(0, 1, label="Temperature", elem_id="temp", value=1)
-        max_tokens = gr.Slider(1, 4000, label="Max. Tokens", elem_id="max_tokens", value=4000)
+        max_tokens = gr.Slider(1, 200000, label="Max. Tokens", elem_id="max_tokens", value=4000)
         save_button = gr.Button("Save Settings")  
         load_button = gr.Button("Load Settings")  
 
         load_button.click(load_settings, js="""  
             () => {  
-                let elems = ['#aws_access textarea', '#aws_secret textarea', '#aws_token textarea', '#temp input', '#max_tokens input'];
+                let elems = ['#aws_access textarea', '#aws_secret textarea', '#aws_token textarea', '#temp input', '#max_tokens input', '#model', '#region'];
                 elems.forEach(elem => {
                     let item = document.querySelector(elem);
                     let event = new InputEvent('input', { bubbles: true });
@@ -134,13 +138,15 @@ with gr.Blocks() as demo:
             }  
         """)
 
-        save_button.click(save_settings, [aws_access, aws_secret, aws_token, temp, max_tokens], js="""  
-            (acc, sec, tok, prompt, temp, ntok) => {  
+        save_button.click(save_settings, [aws_access, aws_secret, aws_token, temp, max_tokens, model, region], js="""  
+            (acc, sec, tok, prompt, temp, ntok, model, region) => {  
                 localStorage.setItem('aws_access', acc);  
                 localStorage.setItem('aws_secret', sec);  
                 localStorage.setItem('aws_token', tok);  
                 localStorage.setItem('temp', document.querySelector('#temp input').value);  
                 localStorage.setItem('max_tokens', document.querySelector('#max_tokens input').value);  
+                localStorage.setItem('model', model);  
+                localStorage.setItem('region', region);  
             }  
         """) 
 
@@ -161,7 +167,7 @@ with gr.Blocks() as demo:
         )
         submit_btn = gr.Button("🚀 Send", scale=0)
         submit_click = submit_btn.click(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
-            bot, [txt, chatbot, aws_access, aws_secret, aws_token, temp, max_tokens], [txt, chatbot],
+            bot, [txt, chatbot, aws_access, aws_secret, aws_token, temp, max_tokens, model, region], [txt, chatbot],
         )
         submit_click.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
 
@@ -201,7 +207,7 @@ with gr.Blocks() as demo:
         import_button.upload(import_history, inputs=[chatbot, import_button], outputs=[chatbot])
 
     txt_msg = txt.submit(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
-        bot, [txt, chatbot, aws_access, aws_secret, aws_token, temp, max_tokens], [txt, chatbot],
+        bot, [txt, chatbot, aws_access, aws_secret, aws_token, temp, max_tokens, model, region], [txt, chatbot],
     )
     txt_msg.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
     file_msg = btn.upload(add_file, [chatbot, btn], [chatbot], queue=False, postprocess=False)
