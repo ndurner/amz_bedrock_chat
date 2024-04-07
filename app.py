@@ -4,6 +4,7 @@ import os
 import boto3
 
 from doc2json import process_docx
+from settings_mgr import generate_download_settings_js, generate_upload_settings_js
 
 dump_controls = False
 log_to_console = False
@@ -130,6 +131,8 @@ with gr.Blocks() as demo:
         max_tokens = gr.Slider(1, 200000, label="Max. Tokens", elem_id="max_tokens", value=4000)
         save_button = gr.Button("Save Settings")  
         load_button = gr.Button("Load Settings")  
+        dl_settings_button = gr.Button("Download Settings")
+        ul_settings_button = gr.Button("Upload Settings")
 
         load_button.click(load_settings, js="""  
             () => {  
@@ -154,6 +157,18 @@ with gr.Blocks() as demo:
                 localStorage.setItem('region', region);  
             }  
         """) 
+
+        control_ids = [('aws_access', '#aws_access textarea'),
+                       ('aws_secret', '#aws_secret textarea'),
+                       ('aws_token', '#aws_token textarea'),
+                       ('temp', '#temp input'),
+                       ('max_tokens', '#max_tokens input'),
+                       ('model', '#model'),
+                       ('region', '#region')]
+        controls = [aws_access, aws_secret, aws_token, temp, max_tokens, model, region]
+
+        dl_settings_button.click(None, controls, js=generate_download_settings_js("amz_chat_settings.bin", control_ids))
+        ul_settings_button.click(None, None, None, js=generate_upload_settings_js(control_ids))
 
     chatbot = gr.Chatbot(
         [],
