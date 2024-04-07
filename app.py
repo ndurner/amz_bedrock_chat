@@ -5,10 +5,9 @@ import boto3
 
 from doc2json import process_docx
 from settings_mgr import generate_download_settings_js, generate_upload_settings_js
+from llm import LLM
 
 dump_controls = False
-log_to_console = False
-
 
 def add_text(history, text):
     history = history + [(text, None)]
@@ -59,26 +58,10 @@ def process_values_js():
     }
     """
 
-def bot(message, history, aws_access, aws_secret, aws_token, temperature, max_tokens, model, region):
+def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temperature, max_tokens, model: str, region):
     try:
-        prompt = "\n\n"
-        for human, assi in history:
-            if prompt is not None:
-                prompt += f"Human: {human}\n\n"
-            if assi is not None:
-                prompt += f"Assistant: {assi}\n\n"
-        if message:
-            prompt += f"Human: {message}\n\n"
-        prompt += f"Assistant:"
-
-        if log_to_console:
-            print(f"br_prompt: {str(prompt)}")
-
-        body = json.dumps({
-            "prompt": prompt,
-            "max_tokens_to_sample": max_tokens,
-            "temperature": temperature,
-        })
+        llm = LLM.create_llm(model)
+        body = llm.generate_body(message, history, system_prompt, temperature, max_tokens)
 
         sess = boto3.Session(
             aws_access_key_id=aws_access,
@@ -87,20 +70,17 @@ def bot(message, history, aws_access, aws_secret, aws_token, temperature, max_to
             region_name=region)
         br = sess.client(service_name="bedrock-runtime")
 
-        response = br.invoke_model(body=body, modelId=f"anthropic.{model}",
+        response = br.invoke_model(body=body, modelId=f"{model}",
                                 accept="application/json", contentType="application/json")
         response_body = json.loads(response.get('body').read())
-        br_result = response_body.get('completion')
+        br_result = llm.read_response(response_body)
 
         history[-1][1] = br_result
-        if log_to_console:
-            print(f"br_result: {str(history)}")
 
     except Exception as e:
         raise gr.Error(f"Error: {str(e)}")
 
     return "", history
-
 
 def import_history(history, file):
     with open(file.name, mode="rb") as f:
@@ -117,16 +97,18 @@ def import_history(history, file):
     return history
 
 with gr.Blocks() as demo:
-    gr.Markdown("# Amazon™️ Bedrock™️ Chat™️ (Nils' Version™️) feat. Anthropic™️ Claude-2™️")
+    gr.Markdown("# Amazon™️ Bedrock™️ Chat™️ (Nils' Version™️) feat. Mistral™️ AI & Anthropic™️ Claude™️")
 
     with gr.Accordion("Settings"):
         aws_access = gr.Textbox(label="AWS Access Key", elem_id="aws_access")
         aws_secret = gr.Textbox(label="AWS Secret Key", elem_id="aws_secret")
         aws_token = gr.Textbox(label="AWS Session Token", elem_id="aws_token")
-        model = gr.Dropdown(label="Model", value="claude-v2:1", allow_custom_value=True, elem_id="model",
-                            choices=["claude-v2:1", "claude-v2"])
-        region = gr.Dropdown(label="Region", value="eu-central-1", allow_custom_value=True, elem_id="region",
-                            choices=["eu-central-1", "us-east-1", "us-west-1"])
+        model = gr.Dropdown(label="Model", value="anthropic.claude-3-sonnet-20240229-v1:0", allow_custom_value=True, elem_id="model",
+                            choices=["anthropic.claude-3-sonnet-20240229-v1:0", "anthropic.claude-3-haiku-20240307-v1:0", "anthropic.claude-v2:1", "anthropic.claude-v2",
+                                     "mistral.mistral-7b-instruct-v0:2", "mistral.mixtral-8x7b-instruct-v0:1", "mistral.mistral-large-2402-v1:0"])
+        system_prompt = gr.TextArea("You are a helpful AI.", label="System Prompt", lines=3, max_lines=250, elem_id="system_prompt")  
+        region = gr.Dropdown(label="Region", value="eu-west-3", allow_custom_value=True, elem_id="region",
+                            choices=["eu-central-1", "eu-west-3", "us-east-1", "us-west-1"])
         temp = gr.Slider(0, 1, label="Temperature", elem_id="temp", value=1)
         max_tokens = gr.Slider(1, 200000, label="Max. Tokens", elem_id="max_tokens", value=4000)
         save_button = gr.Button("Save Settings")  
@@ -136,7 +118,7 @@ with gr.Blocks() as demo:
 
         load_button.click(load_settings, js="""  
             () => {  
-                let elems = ['#aws_access textarea', '#aws_secret textarea', '#aws_token textarea', '#temp input', '#max_tokens input', '#model', '#region'];
+                let elems = ['#aws_access textarea', '#aws_secret textarea', '#aws_token textarea', '#system_prompt textarea', '#temp input', '#max_tokens input', '#model', '#region'];
                 elems.forEach(elem => {
                     let item = document.querySelector(elem);
                     let event = new InputEvent('input', { bubbles: true });
@@ -146,11 +128,12 @@ with gr.Blocks() as demo:
             }  
         """)
 
-        save_button.click(save_settings, [aws_access, aws_secret, aws_token, temp, max_tokens, model, region], js="""  
-            (acc, sec, tok, prompt, temp, ntok, model, region) => {  
+        save_button.click(save_settings, [aws_access, aws_secret, aws_token, system_prompt, temp, max_tokens, model, region], js="""  
+            (acc, sec, tok, system_prompt, temp, ntok, model, region) => {  
                 localStorage.setItem('aws_access', acc);  
                 localStorage.setItem('aws_secret', sec);  
                 localStorage.setItem('aws_token', tok);  
+                localStorage.setItem('system_prompt', system_prompt);
                 localStorage.setItem('temp', document.querySelector('#temp input').value);  
                 localStorage.setItem('max_tokens', document.querySelector('#max_tokens input').value);  
                 localStorage.setItem('model', model);  
@@ -161,11 +144,12 @@ with gr.Blocks() as demo:
         control_ids = [('aws_access', '#aws_access textarea'),
                        ('aws_secret', '#aws_secret textarea'),
                        ('aws_token', '#aws_token textarea'),
+                       ('system_prompt', '#system_prompt textarea'),
                        ('temp', '#temp input'),
                        ('max_tokens', '#max_tokens input'),
                        ('model', '#model'),
                        ('region', '#region')]
-        controls = [aws_access, aws_secret, aws_token, temp, max_tokens, model, region]
+        controls = [aws_access, aws_secret, aws_token, system_prompt, temp, max_tokens, model, region]
 
         dl_settings_button.click(None, controls, js=generate_download_settings_js("amz_chat_settings.bin", control_ids))
         ul_settings_button.click(None, None, None, js=generate_upload_settings_js(control_ids))
@@ -187,7 +171,7 @@ with gr.Blocks() as demo:
         )
         submit_btn = gr.Button("🚀 Send", scale=0)
         submit_click = submit_btn.click(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
-            bot, [txt, chatbot, aws_access, aws_secret, aws_token, temp, max_tokens, model, region], [txt, chatbot],
+            bot, [txt, chatbot, aws_access, aws_secret, aws_token, system_prompt, temp, max_tokens, model, region], [txt, chatbot],
         )
         submit_click.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
 
@@ -256,7 +240,7 @@ with gr.Blocks() as demo:
         import_button.upload(import_history, inputs=[chatbot, import_button], outputs=[chatbot])
 
     txt_msg = txt.submit(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
-        bot, [txt, chatbot, aws_access, aws_secret, aws_token, temp, max_tokens, model, region], [txt, chatbot],
+        bot, [txt, chatbot, aws_access, aws_secret, aws_token, system_prompt, temp, max_tokens, model, region], [txt, chatbot],
     )
     txt_msg.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
     file_msg = btn.upload(add_file, [chatbot, btn], [chatbot], queue=False, postprocess=False)
