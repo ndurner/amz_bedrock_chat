@@ -5,7 +5,7 @@ import boto3
 
 from doc2json import process_docx
 from settings_mgr import generate_download_settings_js, generate_upload_settings_js
-from llm import LLM
+from llm import LLM, log_to_console, image_embed_prefix
 
 dump_controls = False
 
@@ -30,6 +30,16 @@ def add_file(history, file):
     history = history + [(f'```{fn}\n{content}\n```', None)]
 
     gr.Info(f"File added as {fn}")
+
+    return history
+
+def add_img(history, files):
+    for file in files:
+        if log_to_console:
+            print(f"add_img {file.name}")
+        history = history + [(image_embed_prefix + file.name, None)]
+
+        gr.Info(f"Image added as {file.name}")
 
     return history
 
@@ -177,6 +187,7 @@ with gr.Blocks() as demo:
 
     with gr.Row():
         btn = gr.UploadButton("📁 Upload", size="sm")
+        img_btn = gr.UploadButton("🖼️ Upload", size="sm", file_count="multiple", file_types=["image"])
         undo_btn = gr.Button("↩️ Undo")
         undo_btn.click(undo, inputs=[chatbot], outputs=[chatbot])
 
@@ -244,5 +255,6 @@ with gr.Blocks() as demo:
     )
     txt_msg.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
     file_msg = btn.upload(add_file, [chatbot, btn], [chatbot], queue=False, postprocess=False)
+    img_msg = img_btn.upload(add_img, [chatbot, img_btn], [chatbot], queue=False, postprocess=False)
 
 demo.queue().launch()
