@@ -10,7 +10,8 @@ from llm import LLM, log_to_console, image_embed_prefix
 dump_controls = False
 
 def add_text(history, text):
-    history = history + [(text, None)]
+    if text:
+        history = history + [(text, None)]
     return history, gr.Textbox(value="", interactive=False)
 
 

@@ -67,7 +67,7 @@ class Claude(LLM):
         history_claude_format = []
         user_msg_parts = []
         for human, assi in history:
-            if human is not None:
+            if human:
                 if human.startswith(image_embed_prefix):
                     with open(human.lstrip(image_embed_prefix), mode="rb") as f:
                         content = f.read()
@@ -76,7 +76,7 @@ class Claude(LLM):
                 else:
                     user_msg_parts.append({"type": "text", "text": human})
 
-            if assi is not None:
+            if assi:
                 if user_msg_parts:
                     history_claude_format.append({"role": "user", "content": user_msg_parts})
                     user_msg_parts = []
