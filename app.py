@@ -110,7 +110,12 @@ def import_history(history, file):
 with gr.Blocks() as demo:
     gr.Markdown("# Amazon™️ Bedrock™️ Chat™️ (Nils' Version™️) feat. Mistral™️ AI & Anthropic™️ Claude™️")
 
-    with gr.Accordion("Settings"):
+    with gr.Accordion("Startup"):
+        gr.Markdown("""Use of this interface permitted under the terms and conditions of the 
+                    [MIT license](https://github.com/ndurner/amz_bedrock_chat/blob/main/LICENSE).
+                    Third party terms and conditions apply, particularly
+                    those of the LLM vendor (AWS) and hosting provider (Hugging Face).""")
+        
         aws_access = gr.Textbox(label="AWS Access Key", elem_id="aws_access")
         aws_secret = gr.Textbox(label="AWS Secret Key", elem_id="aws_secret")
         aws_token = gr.Textbox(label="AWS Session Token", elem_id="aws_token")
