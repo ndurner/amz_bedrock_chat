@@ -107,7 +107,7 @@ def import_history(history, file):
     # The history is returned and will be set to the chatbot component
     return history
 
-with gr.Blocks(delete_cache=(86400, 86400)) as demo:
+with gr.Blocks() as demo:
     gr.Markdown("# Amazon™️ Bedrock™️ Chat™️ (Nils' Version™️) feat. Mistral™️ AI & Anthropic™️ Claude™️")
 
     with gr.Accordion("Startup"):
