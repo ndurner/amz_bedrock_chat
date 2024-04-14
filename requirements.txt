@@ -1,4 +1,4 @@
-gradio>=4.20
+gradio>=4.1
 langchain
 boto3>1.34.54
 lxml
