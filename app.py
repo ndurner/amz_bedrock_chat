@@ -119,12 +119,12 @@ with gr.Blocks() as demo:
         aws_access = gr.Textbox(label="AWS Access Key", elem_id="aws_access")
         aws_secret = gr.Textbox(label="AWS Secret Key", elem_id="aws_secret")
         aws_token = gr.Textbox(label="AWS Session Token", elem_id="aws_token")
-        model = gr.Dropdown(label="Model", value="anthropic.claude-3-sonnet-20240229-v1:0", allow_custom_value=True, elem_id="model",
-                            choices=["anthropic.claude-3-sonnet-20240229-v1:0", "anthropic.claude-3-haiku-20240307-v1:0", "anthropic.claude-v2:1", "anthropic.claude-v2",
+        model = gr.Dropdown(label="Model", value="anthropic.claude-3-opus-20240229-v1:0", allow_custom_value=True, elem_id="model",
+                            choices=["anthropic.claude-3-opus-20240229-v1:0", "anthropic.claude-3-sonnet-20240229-v1:0", "anthropic.claude-3-haiku-20240307-v1:0", "anthropic.claude-v2:1", "anthropic.claude-v2",
                                      "mistral.mistral-7b-instruct-v0:2", "mistral.mixtral-8x7b-instruct-v0:1", "mistral.mistral-large-2402-v1:0"])
         system_prompt = gr.TextArea("You are a helpful yet diligent AI assistant. Answer faithfully and factually correct. Respond with 'I do not know' if uncertain.", label="System Prompt", lines=3, max_lines=250, elem_id="system_prompt")  
-        region = gr.Dropdown(label="Region", value="eu-west-3", allow_custom_value=True, elem_id="region",
-                            choices=["eu-central-1", "eu-west-3", "us-east-1", "us-west-1"])
+        region = gr.Dropdown(label="Region", value="us-west-2", allow_custom_value=True, elem_id="region",
+                            choices=["eu-central-1", "eu-west-3", "us-east-1", "us-west-1", "us-west-2"])
         temp = gr.Slider(0, 1, label="Temperature", elem_id="temp", value=1)
         max_tokens = gr.Slider(1, 200000, label="Max. Tokens", elem_id="max_tokens", value=4000)
         save_button = gr.Button("Save Settings")  
