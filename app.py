@@ -126,7 +126,7 @@ with gr.Blocks() as demo:
         region = gr.Dropdown(label="Region", value="us-west-2", allow_custom_value=True, elem_id="region",
                             choices=["eu-central-1", "eu-west-3", "us-east-1", "us-west-1", "us-west-2"])
         temp = gr.Slider(0, 1, label="Temperature", elem_id="temp", value=1)
-        max_tokens = gr.Slider(1, 200000, label="Max. Tokens", elem_id="max_tokens", value=4000)
+        max_tokens = gr.Slider(1, 8192, label="Max. Tokens", elem_id="max_tokens", value=4096)
         save_button = gr.Button("Save Settings")  
         load_button = gr.Button("Load Settings")  
         dl_settings_button = gr.Button("Download Settings")
