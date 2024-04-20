@@ -6,6 +6,7 @@ import boto3
 from doc2json import process_docx
 from settings_mgr import generate_download_settings_js, generate_upload_settings_js
 from llm import LLM, log_to_console, image_embed_prefix
+from botocore.config import Config
 
 dump_controls = False
 
@@ -74,12 +75,21 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
         llm = LLM.create_llm(model)
         body = llm.generate_body(message, history, system_prompt, temperature, max_tokens)
 
+        config = Config(
+            read_timeout=600,
+            connect_timeout=30,
+            retries={
+                'max_attempts': 10,
+                'mode': 'adaptive'
+            }
+        )
+
         sess = boto3.Session(
             aws_access_key_id=aws_access,
             aws_secret_access_key=aws_secret,
             aws_session_token=aws_token,
             region_name=region)
-        br = sess.client(service_name="bedrock-runtime")
+        br = sess.client(service_name="bedrock-runtime", config = config)
 
         response = br.invoke_model(body=body, modelId=f"{model}",
                                 accept="application/json", contentType="application/json")
