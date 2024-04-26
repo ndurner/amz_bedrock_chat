@@ -31,8 +31,6 @@ def add_file(history, file):
     fn = os.path.basename(file.name)
     history = history + [(f'```{fn}\n{content}\n```', None)]
 
-    gr.Info(f"File added as {fn}")
-
     return history
 
 def add_img(history, files):
