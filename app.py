@@ -113,10 +113,15 @@ def import_history(history, file):
     # Deserialize the JSON content
     import_data = json.loads(content)
 
-    new_history = import_data.get('history', history)  # Use existing history if not provided
-    new_system_prompt = import_data.get('system_prompt', '')  # Default to empty if not provided
+    # Check if 'history' key exists for backward compatibility
+    if 'history' in import_data:
+        history = import_data['history']
+        system_prompt.value = import_data.get('system_prompt', '')  # Set default if not present
+    else:
+        # Assume it's an old format with only history data
+        history = import_data
 
-    return new_history, new_system_prompt
+    return history, system_prompt.value  # Return system prompt value to be set in the UI
 
 with gr.Blocks() as demo:
     gr.Markdown("# Amazon™️ Bedrock™️ Chat™️ (Nils' Version™️) feat. Mistral™️ AI & Anthropic™️ Claude™️")
