@@ -3,48 +3,11 @@ import json
 import os
 import boto3
 
-from doc2json import process_docx
 from settings_mgr import generate_download_settings_js, generate_upload_settings_js
-from llm import LLM, log_to_console, image_embed_prefix
+from llm import LLM, log_to_console
 from botocore.config import Config
 
 dump_controls = False
-
-def add_text(history, text):
-    if text:
-        history = history + [(text, None)]
-    return history, gr.Textbox(value="", interactive=False)
-
-
-def add_file(history, file):
-    if file.name.endswith(".docx"):
-        content = process_docx(file.name)
-    else:
-        with open(file.name, mode="rb") as f:
-            content = f.read()
-
-            if isinstance(content, bytes):
-                content = content.decode('utf-8', 'replace')
-            else:
-                content = str(content)
-
-    fn = os.path.basename(file.name)
-    history = history + [(f'```{fn}\n{content}\n```', None)]
-
-    return history
-
-def add_img(history, files):
-    for file in files:
-        if log_to_console:
-            print(f"add_img {file.name}")
-        history = history + [(image_embed_prefix + file.name, None)]
-
-        gr.Info(f"Image added as {file.name}")
-
-    return history
-
-def submit_text(txt_value):
-    return add_text([chatbot, txt_value], [chatbot, txt_value])
 
 def undo(history):
     history.pop()
@@ -92,14 +55,12 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
         response = br.invoke_model(body=body, modelId=f"{model}",
                                 accept="application/json", contentType="application/json")
         response_body = json.loads(response.get('body').read())
-        br_result = llm.read_response(response_body)
-
-        history[-1][1] = br_result
+        result = llm.read_response(response_body)
 
     except Exception as e:
         raise gr.Error(f"Error: {str(e)}")
 
-    return "", history
+    return result
 
 def import_history(history, file):
     with open(file.name, mode="rb") as f:
@@ -186,34 +147,11 @@ with gr.Blocks() as demo:
         dl_settings_button.click(None, controls, js=generate_download_settings_js("amz_chat_settings.bin", control_ids))
         ul_settings_button.click(None, None, None, js=generate_upload_settings_js(control_ids))
 
-    chatbot = gr.Chatbot(
-        [],
-        elem_id="chatbot",
-        show_copy_button=True,
-        height=350
-    )
-
-    with gr.Row():
-        txt = gr.TextArea(
-            scale=4,
-            show_label=False,
-            placeholder="Enter text and press enter, or upload a file",
-            container=False,
-            lines=3,            
-        )
-        submit_btn = gr.Button("🚀 Send", scale=0)
-        submit_click = submit_btn.click(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
-            bot, [txt, chatbot, aws_access, aws_secret, aws_token, system_prompt, temp, max_tokens, model, region], [txt, chatbot],
-        )
-        submit_click.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
-
-    with gr.Row():
-        btn = gr.UploadButton("📁 Upload", size="sm")
-        img_btn = gr.UploadButton("🖼️ Upload", size="sm", file_count="multiple", file_types=["image"])
-        undo_btn = gr.Button("↩️ Undo")
-        undo_btn.click(undo, inputs=[chatbot], outputs=[chatbot])
-
-        clear = gr.ClearButton(chatbot, value="🗑️ Clear")
+    chat = gr.ChatInterface(fn=bot, multimodal=True, additional_inputs=controls, retry_btn = None, autofocus = False)
+    chat.textbox.file_count = "multiple"
+    chatbot = chat.chatbot
+    chatbot.show_copy_button = True
+    chatbot.height = 350
 
     if dump_controls:
         with gr.Row():
@@ -272,12 +210,5 @@ with gr.Blocks() as demo:
             }
         """)
         import_button.upload(import_history, inputs=[chatbot, import_button], outputs=[chatbot, system_prompt])
-
-    txt_msg = txt.submit(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
-        bot, [txt, chatbot, aws_access, aws_secret, aws_token, system_prompt, temp, max_tokens, model, region], [txt, chatbot],
-    )
-    txt_msg.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
-    file_msg = btn.upload(add_file, [chatbot, btn], [chatbot], queue=False, postprocess=False)
-    img_msg = img_btn.upload(add_img, [chatbot, img_btn], [chatbot], queue=False, postprocess=False)
 
 demo.queue().launch()
