@@ -34,33 +34,42 @@ def process_values_js():
 def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temperature, max_tokens, model: str, region):
     try:
         llm = LLM.create_llm(model)
-        body = llm.generate_body(message, history, system_prompt, temperature, max_tokens)
+        messages = llm.generate_body(message, history)
 
         config = Config(
-            read_timeout=600,
-            connect_timeout=30,
-            retries={
+            read_timeout = 600,
+            connect_timeout = 30,
+            retries = {
                 'max_attempts': 10,
                 'mode': 'adaptive'
             }
         )
 
         sess = boto3.Session(
-            aws_access_key_id=aws_access,
-            aws_secret_access_key=aws_secret,
-            aws_session_token=aws_token,
-            region_name=region)
+            aws_access_key_id = aws_access,
+            aws_secret_access_key = aws_secret,
+            aws_session_token = aws_token,
+            region_name = region)
         br = sess.client(service_name="bedrock-runtime", config = config)
 
-        response = br.invoke_model(body=body, modelId=f"{model}",
-                                accept="application/json", contentType="application/json")
-        response_body = json.loads(response.get('body').read())
-        result = llm.read_response(response_body)
+        response = br.converse_stream(
+            modelId = model,
+            messages = messages,
+            system = [{"text": system_prompt}],
+            inferenceConfig = {
+                "temperature": temperature,
+                "maxTokens": max_tokens,
+            }
+        )
+        response_stream = response.get('stream')
+        
+        partial_response = ""
+        for chunk in llm.read_response(response_stream):
+            partial_response += chunk
+            yield partial_response
 
     except Exception as e:
         raise gr.Error(f"Error: {str(e)}")
-
-    return result
 
 def import_history(history, file):
     with open(file.name, mode="rb") as f:
