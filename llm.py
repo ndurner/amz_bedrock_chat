@@ -10,6 +10,9 @@ import io
 import boto3
 from botocore.config import Config
 import re
+from PIL import Image
+import io
+import math
 
 # constants
 log_to_console = False
@@ -140,30 +143,70 @@ class LLM:
         return message_parts
 
     def _encode_image(self, image_data):
-        # Get the first few bytes of the image data.
-        magic_number = image_data[:4]
-    
-        # Check the magic number to determine the image type.
-        if magic_number.startswith(b'\x89PNG'):
-            image_type = 'png'
-        elif magic_number.startswith(b'\xFF\xD8'):
-            image_type = 'jpeg'
-        elif magic_number.startswith(b'GIF89a'):
-            image_type = 'gif'
-        elif magic_number.startswith(b'RIFF'):
-            if image_data[8:12] == b'WEBP':
-                image_type = 'webp'
-            else:
-                # Unknown image type.
-                raise Exception("Unknown image type")
-        else:
-            # Unknown image type.
+        try:
+            # Open the image using Pillow
+            img = Image.open(io.BytesIO(image_data))
+            original_format = img.format.lower()
+        except IOError:
             raise Exception("Unknown image type")
+        
+        # check if within the limits for Claude as per https://docs.anthropic.com/en/docs/build-with-claude/vision
+        def calculate_tokens(width, height):
+            return (width * height) / 750
 
-        return {
-                "format": image_type,
+        tokens = calculate_tokens(img.width, img.height)
+        long_edge = max(img.width, img.height)
+
+        # Check if the image already meets all requirements
+        if long_edge <= 1568 and tokens <= 1600 and len(image_data) <= 5 * 1024 * 1024:
+            return {
+                "format": original_format,
                 "source": {"bytes": image_data}
             }
+
+        # If we need to modify the image, proceed with resizing and/or compression
+        while long_edge > 1568 or tokens > 1600:
+            if long_edge > 1568:
+                scale_factor = max(1568 / long_edge, 0.9)
+            else:
+                scale_factor = max(math.sqrt(1600 / tokens), 0.9)
+            
+            new_width = int(img.width * scale_factor)
+            new_height = int(img.height * scale_factor)
+            
+            img = img.resize((new_width, new_height), Image.LANCZOS)
+            
+            long_edge = max(new_width, new_height)
+            tokens = calculate_tokens(new_width, new_height)
+
+        # Try to save in original format first
+        buffer = io.BytesIO()
+        img.save(buffer, format=original_format, quality=95)
+        image_data = buffer.getvalue()
+        
+        # If the image is still too large, switch to WebP and compress
+        if len(image_data) > 5 * 1024 * 1024:
+            format_to_use = "webp"
+            quality = 95
+            while len(image_data) > 5 * 1024 * 1024:
+                quality = max(int(quality * 0.9), 20)
+                buffer = io.BytesIO()
+                img.save(buffer, format=format_to_use, quality=quality)
+                image_data = buffer.getvalue()
+                if quality == 20:
+                    # If we've reached quality 20 and it's still too large, resize
+                    scale_factor = 0.9
+                    new_width = int(img.width * scale_factor)
+                    new_height = int(img.height * scale_factor)
+                    img = img.resize((new_width, new_height), Image.LANCZOS)
+                    quality = 95  # Reset quality for the resized image
+        else:
+            format_to_use = original_format
+
+        return {
+            "format": format_to_use,
+            "source": {"bytes": image_data}
+        }
 
     def read_response(self, response_stream):
         for event in response_stream:
