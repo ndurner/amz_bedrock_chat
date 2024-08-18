@@ -100,7 +100,7 @@ with gr.Blocks() as demo:
         gr.Markdown("""Use of this interface permitted under the terms and conditions of the 
                     [MIT license](https://github.com/ndurner/amz_bedrock_chat/blob/main/LICENSE).
                     Third party terms and conditions apply, particularly
-                    those of the LLM vendor (AWS) and hosting provider (Hugging Face).""")
+                    those of the LLM vendor (AWS) and hosting provider (Hugging Face). This software and the AI models may make mistakes, so verify all outputs.""")
         
         aws_access = gr.Textbox(label="AWS Access Key", elem_id="aws_access")
         aws_secret = gr.Textbox(label="AWS Secret Key", elem_id="aws_secret")
