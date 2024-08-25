@@ -1,7 +1,9 @@
 import gradio as gr
 import json
-import os
+import io
 import boto3
+import base64
+from PIL import Image
 
 from settings_mgr import generate_download_settings_js, generate_upload_settings_js
 from llm import LLM, log_to_console
@@ -86,12 +88,33 @@ def import_history(history, file):
     # Check if 'history' key exists for backward compatibility
     if 'history' in import_data:
         history = import_data['history']
-        system_prompt.value = import_data.get('system_prompt', '')  # Set default if not present
+        system_prompt_value = import_data.get('system_prompt', '')  # Set default if not present
     else:
         # Assume it's an old format with only history data
         history = import_data
+        system_prompt_value = ''
 
-    return history, system_prompt.value  # Return system prompt value to be set in the UI
+    # Process the history to handle image data
+    processed_history = []
+    for pair in history:
+        processed_pair = []
+        for message in pair:
+            if isinstance(message, dict) and 'file' in message and 'data' in message['file']:
+                # Create a gradio.Image from the base64 data
+                image_data = base64.b64decode(message['file']['data'].split(',')[1])
+                img = Image.open(io.BytesIO(image_data))
+                gr_image = gr.Image(img)
+                processed_pair.append(gr_image)
+
+                gr.Warning("Reusing images across sessions is limited to one conversation turn")
+            else:
+                processed_pair.append(message)
+        processed_history.append(processed_pair)
+
+    return processed_history, system_prompt_value
+
+def export_history(h, s):
+    pass
 
 with gr.Blocks(delete_cache=(86400, 86400)) as demo:
     gr.Markdown("# Amazon™️ Bedrock™️ Chat™️ (Nils' Version™️) feat. Mistral™️ AI & Anthropic™️ Claude™️")
@@ -171,10 +194,39 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
     with gr.Accordion("Import/Export", open = False):
         import_button = gr.UploadButton("History Import")
         export_button = gr.Button("History Export")
-        export_button.click(lambda: None, [chatbot, system_prompt], js="""
-            (chat_history, system_prompt) => {
+        export_button.click(export_history, [chatbot, system_prompt], js="""
+            async (chat_history, system_prompt) => {
+                console.log('Chat History:', JSON.stringify(chat_history, null, 2));
+
+                async function fetchAndEncodeImage(url) {
+                    const response = await fetch(url);
+                    const blob = await response.blob();
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                }
+
+                const processedHistory = await Promise.all(chat_history.map(async (pair) => {
+                    return await Promise.all(pair.map(async (message) => {
+                        if (message && message.file && message.file.url) {
+                            const base64Image = await fetchAndEncodeImage(message.file.url);
+                            return {
+                                ...message,
+                                file: {
+                                    ...message.file,
+                                    data: base64Image
+                                }
+                            };
+                        }
+                        return message;
+                    }));
+                }));
+
                 const export_data = {
-                    history: chat_history,
+                    history: processedHistory,
                     system_prompt: system_prompt
                 };
                 const history_json = JSON.stringify(export_data);
@@ -188,7 +240,7 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             }
-            """)
+        """)
         dl_button = gr.Button("File download")
         dl_button.click(lambda: None, [chatbot], js="""
             (chat_history) => {

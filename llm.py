@@ -13,6 +13,7 @@ import re
 from PIL import Image
 import io
 import math
+import gradio
 
 # constants
 log_to_console = False
@@ -41,6 +42,8 @@ class LLM:
 
                 if isinstance(human, tuple):
                     user_msg_parts.extend(self._process_file(human[0]))
+                elif isinstance(human, gradio.Image):
+                    user_msg_parts.extend(self._process_file(human.value["path"]))
                 else:
                     user_msg_parts.extend([{"text": human}])
 
