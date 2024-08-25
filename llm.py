@@ -156,9 +156,10 @@ class LLM:
 
         tokens = calculate_tokens(img.width, img.height)
         long_edge = max(img.width, img.height)
+        format_ok = original_format in ["jpg", "jpeg", "png", "webp"]
 
         # Check if the image already meets all requirements
-        if long_edge <= 1568 and tokens <= 1600 and len(image_data) <= 5 * 1024 * 1024:
+        if format_ok and (long_edge <= 1568 and tokens <= 1600 and len(image_data) <= 5 * 1024 * 1024):
             return {
                 "format": original_format,
                 "source": {"bytes": image_data}
@@ -181,17 +182,16 @@ class LLM:
 
         # Try to save in original format first
         buffer = io.BytesIO()
-        img.save(buffer, format=original_format, quality=95)
+        img.save(buffer, format="webp", quality=95)
         image_data = buffer.getvalue()
         
         # If the image is still too large, switch to WebP and compress
         if len(image_data) > 5 * 1024 * 1024:
-            format_to_use = "webp"
             quality = 95
             while len(image_data) > 5 * 1024 * 1024:
                 quality = max(int(quality * 0.9), 20)
                 buffer = io.BytesIO()
-                img.save(buffer, format=format_to_use, quality=quality)
+                img.save(buffer, format="webp", quality=quality)
                 image_data = buffer.getvalue()
                 if quality == 20:
                     # If we've reached quality 20 and it's still too large, resize
@@ -200,11 +200,9 @@ class LLM:
                     new_height = int(img.height * scale_factor)
                     img = img.resize((new_width, new_height), Image.LANCZOS)
                     quality = 95  # Reset quality for the resized image
-        else:
-            format_to_use = original_format
 
         return {
-            "format": format_to_use,
+            "format": "webp",
             "source": {"bytes": image_data}
         }
 
