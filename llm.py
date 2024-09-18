@@ -54,11 +54,11 @@ class LLM:
                 lastTypeHuman = False
         
         user_msg_parts = []
-        if message.text:
-            user_msg_parts.append({"text": message.text})
-        if message.files:
-            for file in message.files:
-                user_msg_parts.extend(self._process_file(file.path))
+        if message["text"]:
+            user_msg_parts.append({"text": message["text"]})
+        if message["files"]:
+            for file in message["files"]:
+                user_msg_parts.extend(self._process_file(file["path"]))
         
         if user_msg_parts:
             messages.append({"role": "user", "content": user_msg_parts})
