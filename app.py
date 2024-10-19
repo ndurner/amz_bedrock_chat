@@ -11,10 +11,6 @@ from botocore.config import Config
 
 dump_controls = False
 
-def undo(history):
-    history.pop()
-    return history
-
 def dump(history):
     return str(history)
 
@@ -179,11 +175,11 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
         dl_settings_button.click(None, controls, js=generate_download_settings_js("amz_chat_settings.bin", control_ids))
         ul_settings_button.click(None, None, None, js=generate_upload_settings_js(control_ids))
 
-    chat = gr.ChatInterface(fn=bot, multimodal=True, additional_inputs=controls, retry_btn = None, autofocus = False)
+    chat = gr.ChatInterface(fn=bot, multimodal=True, additional_inputs=controls, autofocus = False)
     chat.textbox.file_count = "multiple"
     chatbot = chat.chatbot
     chatbot.show_copy_button = True
-    chatbot.height = 350
+    chatbot.height = 450
 
     if dump_controls:
         with gr.Row():
