@@ -33,6 +33,10 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
     try:
         llm = LLM.create_llm(model)
         messages = llm.generate_body(message, history)
+        if system_prompt:
+            sys_prompt = [{"text": system_prompt}]
+        else:
+            sys_prompt = []
 
         config = Config(
             read_timeout = 600,
@@ -53,9 +57,9 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
         response = br.converse_stream(
             modelId = model,
             messages = messages,
-            system = [{"text": system_prompt}],
+            system = sys_prompt,
             inferenceConfig = {
-                "temperature": temperature,
+                "temperature": 1,
                 "maxTokens": max_tokens,
             }
         )
