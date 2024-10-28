@@ -153,6 +153,22 @@ class LLM:
         except IOError:
             raise Exception("Unknown image type")
         
+        # Ensure correct orientation based on EXIF
+        try:
+            exif = img._getexif()
+            if exif:
+                orientation = exif.get(274)  # 274 is the orientation tag
+                if orientation:
+                    # Rotate or flip based on EXIF orientation
+                    if orientation == 3:
+                        img = img.rotate(180, expand=True)
+                    elif orientation == 6:
+                        img = img.rotate(270, expand=True)
+                    elif orientation == 8:
+                        img = img.rotate(90, expand=True)
+        except:
+            pass  # If EXIF processing fails, use image as-is
+
         # check if within the limits for Claude as per https://docs.anthropic.com/en/docs/build-with-claude/vision
         def calculate_tokens(width, height):
             return (width * height) / 750
@@ -169,23 +185,29 @@ class LLM:
             }
 
         # If we need to modify the image, proceed with resizing and/or compression
+        orig_scale_factor = 1
+        orig_img = img
         while long_edge > 1568 or tokens > 1600:
             if long_edge > 1568:
-                scale_factor = max(1568 / long_edge, 0.9)
+                scale_factor = min(1568 / long_edge, 0.9)
             else:
-                scale_factor = max(math.sqrt(1600 / tokens), 0.9)
+                scale_factor = min(math.sqrt(1600 / tokens), 0.9)
+
+            scale_factor = orig_scale_factor * scale_factor
+            orig_scale_factor = scale_factor
             
-            new_width = int(img.width * scale_factor)
-            new_height = int(img.height * scale_factor)
+            new_width = int(orig_img.width * scale_factor)
+            new_height = int(orig_img.height * scale_factor)
             
-            img = img.resize((new_width, new_height), Image.LANCZOS)
+            img = orig_img.resize((new_width, new_height), Image.LANCZOS)
             
-            long_edge = max(new_width, new_height)
-            tokens = calculate_tokens(new_width, new_height)
+            long_edge = max(img.width, img.height)
+            tokens = calculate_tokens(img.width, img.height)
 
         # Try to save in original format first
         buffer = io.BytesIO()
-        img.save(buffer, format="webp", quality=95)
+        out_fmt = "png" if original_format == "png" else "webp"
+        img.save(buffer, format=out_fmt, quality=95 if out_fmt == "webp" else None)
         image_data = buffer.getvalue()
         
         # If the image is still too large, switch to WebP and compress
