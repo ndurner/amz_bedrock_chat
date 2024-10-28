@@ -59,7 +59,7 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
             messages = messages,
             system = sys_prompt,
             inferenceConfig = {
-                "temperature": 1,
+                "temperature": temperature,
                 "maxTokens": max_tokens,
             }
         )
