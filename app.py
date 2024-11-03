@@ -7,6 +7,7 @@ from PIL import Image
 
 from settings_mgr import generate_download_settings_js, generate_upload_settings_js
 from llm import LLM, log_to_console
+from code_exec import eval_restricted_script
 from botocore.config import Config
 
 dump_controls = False
@@ -29,23 +30,38 @@ def process_values_js():
     }
     """
 
-def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temperature, max_tokens, model: str, region):
+def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temperature, max_tokens, model: str, region, python_use):
     try:
         llm = LLM.create_llm(model)
         messages = llm.generate_body(message, history)
-        if system_prompt:
-            sys_prompt = [{"text": system_prompt}]
-        else:
-            sys_prompt = []
+        sys_prompt = [{"text": system_prompt}] if system_prompt else []
 
         config = Config(
             read_timeout = 600,
             connect_timeout = 30,
-            retries = {
-                'max_attempts': 10,
-                'mode': 'adaptive'
-            }
+            retries = {'max_attempts': 10, 'mode': 'adaptive'}
         )
+
+        tool_config = {
+            "tools": [{
+                "toolSpec": {
+                    "name": "eval_python",
+                    "description": "Evaluate RestrictedPython script",
+                    "inputSchema": {
+                        "json": {
+                            "type": "object",
+                            "properties": {
+                                "script": {
+                                    "type": "string",
+                                    "description": "The Python script that will run in a RestrictedPython context"
+                                }
+                            },
+                            "required": ["script"]
+                        }
+                    }
+                }
+            }]
+        } if python_use else None
 
         sess = boto3.Session(
             aws_access_key_id = aws_access,
@@ -54,21 +70,73 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
             region_name = region)
         br = sess.client(service_name="bedrock-runtime", config = config)
 
-        response = br.converse_stream(
-            modelId = model,
-            messages = messages,
-            system = sys_prompt,
-            inferenceConfig = {
-                "temperature": temperature,
-                "maxTokens": max_tokens,
-            }
-        )
-        response_stream = response.get('stream')
-        
-        partial_response = ""
-        for chunk in llm.read_response(response_stream):
-            partial_response += chunk
-            yield partial_response
+        whole_response = ""
+        while True:
+            response = br.converse_stream(
+                modelId = model,
+                messages = messages,
+                system = sys_prompt,
+                inferenceConfig = {
+                    "temperature": temperature,
+                    "maxTokens": max_tokens,
+                },
+                **({'toolConfig': tool_config} if python_use else {})
+            )
+
+            for stop_reason, message in llm.read_response(response.get('stream')):
+                if isinstance(message, str):
+                    whole_response += message
+                    yield whole_response
+
+                if stop_reason:
+                    if stop_reason == "tool_use":
+                        messages.append(message)
+
+                        for content in message['content']:
+                            if 'toolUse' in content:
+                                tool = content['toolUse']
+
+                                if tool['name'] == 'eval_python':
+                                    tool_result = {}
+                                    try:
+                                        tool_script = tool["input"]["script"]
+
+                                        whole_response += f"\n``` script\n{tool_script}\n```\n"
+                                        yield whole_response
+
+                                        tool_result = eval_restricted_script(tool_script)
+                                        tool_result_message = {
+                                            "role": "user",
+                                            "content": [
+                                                {
+                                                    "toolResult": {
+                                                        "toolUseId": tool['toolUseId'],
+                                                        "content": [{"json": tool_result}]
+                                                    }
+                                                }
+                                            ]
+                                        }
+
+                                        whole_response += f"\n``` result\n{tool_result}\n```\n"
+                                        yield whole_response
+                                    except Exception as e:
+                                        tool_result_message = {
+                                            "role": "user",
+                                            "content": [
+                                                {
+                                                    "toolResult": {
+                                                        "content": [{"text":  e.args[0]}],
+                                                        "status": 'error'
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                        whole_response += f"\n``` error\n{e.args[0]}\n```\n"
+                                        yield whole_response
+
+                                    messages.append(tool_result_message)
+                    else:
+                        return
 
     except Exception as e:
         raise gr.Error(f"Error: {str(e)}")
@@ -136,6 +204,7 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
                             choices=["eu-central-1", "eu-west-3", "us-east-1", "us-west-1", "us-west-2"])
         temp = gr.Slider(0, 1, label="Temperature", elem_id="temp", value=1)
         max_tokens = gr.Slider(1, 8192, label="Max. Tokens", elem_id="max_tokens", value=4096)
+        python_use = gr.Checkbox(label="Python Use")
         save_button = gr.Button("Save Settings")  
         load_button = gr.Button("Load Settings")  
         dl_settings_button = gr.Button("Download Settings")
@@ -174,7 +243,7 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
                        ('max_tokens', '#max_tokens input'),
                        ('model', '#model'),
                        ('region', '#region')]
-        controls = [aws_access, aws_secret, aws_token, system_prompt, temp, max_tokens, model, region]
+        controls = [aws_access, aws_secret, aws_token, system_prompt, temp, max_tokens, model, region, python_use]
 
         dl_settings_button.click(None, controls, js=generate_download_settings_js("amz_chat_settings.bin", control_ids))
         ul_settings_button.click(None, None, None, js=generate_upload_settings_js(control_ids))

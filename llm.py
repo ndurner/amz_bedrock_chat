@@ -232,16 +232,48 @@ class LLM:
         }
 
     def read_response(self, response_stream):
-        for event in response_stream:
-            if 'contentBlockDelta' in event:
-                yield event['contentBlockDelta']['delta']['text']
-            if 'messageStop' in event:
-                if log_to_console:
-                    print(f"\nStop reason: {event['messageStop']['stopReason']}")
-            if 'metadata' in event:
-                metadata = event['metadata']
-                if 'usage' in metadata and log_to_console:
-                    print("\nToken usage:")
-                    print(f"Input tokens: {metadata['usage']['inputTokens']}")
-                    print(f"Output tokens: {metadata['usage']['outputTokens']}")
-                    print(f"Total tokens: {metadata['usage']['totalTokens']}")
+        """
+        Handles response stream that may contain both regular text and tool use requests.
+        Yields tuples of (text, tool_request, stop_reason) where:
+        - text: accumulated text response
+        - tool_request: dict with tool use details if present, None otherwise
+        - stop_reason: string indicating why stream stopped, None while streaming
+        """
+        message = {}
+        content = []
+        message['content'] = content
+        tool_use = {}
+        text = ''
+        stop_reason = None
+
+        for chunk in response_stream:
+            if 'messageStart' in chunk:
+                message['role'] = chunk['messageStart']['role']
+            elif 'contentBlockStart' in chunk:
+                tool = chunk['contentBlockStart']['start']['toolUse']
+                tool_use['toolUseId'] = tool['toolUseId']
+                tool_use['name'] = tool['name']
+            elif 'contentBlockDelta' in chunk:
+                delta = chunk['contentBlockDelta']['delta']
+                if 'toolUse' in delta:
+                    if 'input' not in tool_use:
+                        tool_use['input'] = ''
+                    tool_use['input'] += delta['toolUse']['input']
+                elif 'text' in delta:
+                    text += delta['text']
+                    yield None, delta['text']
+            elif 'contentBlockStop' in chunk:
+                if 'input' in tool_use:
+                    tool_use['input'] = json.loads(tool_use['input'])
+                    content.append({'toolUse': tool_use})
+                    tool_use = {}
+                else:
+                    content.append({'text': text})
+            elif 'messageStop' in chunk:
+                stop_reason = chunk['messageStop']['stopReason']
+                yield stop_reason, message
+            elif 'metadata' in chunk and 'usage' in chunk['metadata'] and log_to_console:
+                print("\nToken usage:")
+                print(f"Input tokens: {metadata['usage']['inputTokens']}")
+                print(f"Output tokens: {metadata['usage']['outputTokens']}")
+                print(f"Total tokens: {metadata['usage']['totalTokens']}")

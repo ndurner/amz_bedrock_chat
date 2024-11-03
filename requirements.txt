@@ -3,3 +3,4 @@ langchain
 boto3>1.34.54
 lxml
 PyMuPDF
+RestrictedPython
