@@ -46,14 +46,19 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
             "tools": [{
                 "toolSpec": {
                     "name": "eval_python",
-                    "description": "Evaluate RestrictedPython script",
+                    "description": "Evaluate a simple script written in a conservative, restricted subset of Python."
+                                "Note: Augmented assignments, in-place operations (e.g., +=, -=), lambdas (e.g. list comprehensions) are not supported. "
+                                "Use regular assignments and operations instead. Only 'import math' is allowed. "
+                                "Returns: unquoted results without HTML encoding.",
                     "inputSchema": {
                         "json": {
                             "type": "object",
                             "properties": {
                                 "script": {
                                     "type": "string",
-                                    "description": "The Python script that will run in a RestrictedPython context"
+                                    "description": "The Python script that will run in a RestrictedPython context. "
+                                                "Avoid using augmented assignments or in-place operations (+=, -=, etc.), as well as lambdas (e.g. list comprehensions). "
+                                                "Use regular assignments and operations instead. Only 'import math' is allowed."
                                 }
                             },
                             "required": ["script"]
@@ -111,13 +116,13 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
                                                 {
                                                     "toolResult": {
                                                         "toolUseId": tool['toolUseId'],
-                                                        "content": [{"json": tool_result}]
+                                                        "content": [{"json": tool_result }]
                                                     }
                                                 }
                                             ]
                                         }
 
-                                        whole_response += f"\n``` result\n{tool_result}\n```\n"
+                                        whole_response += f"\n``` result\n{tool_result if not tool_result['success'] else tool_result['prints']}\n```\n"
                                         yield whole_response
                                     except Exception as e:
                                         tool_result_message = {
