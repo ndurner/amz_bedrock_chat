@@ -6,6 +6,7 @@ from RestrictedPython.Utilities import utility_builtins
 from RestrictedPython.Guards import guarded_unpack_sequence
 from RestrictedPython.Limits import limited_range, limited_list, limited_tuple
 from io import StringIO
+import types
 
 def eval_restricted_script(script):
     # Set up print collector and output handling
