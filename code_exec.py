@@ -51,7 +51,7 @@ def eval_restricted_script(script):
         '_write_': _default_write_,
         
         # Define allowed imports
-        '__allowed_modules__': ['math'],
+        '__allowed_modules__': ['math', 'datetime'],
         '__import__': __import__,
         
         # Basic functions
