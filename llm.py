@@ -118,31 +118,65 @@ class LLM:
     def _process_pdf_img(self, pdf_fn: str):
         pdf = fitz.open(pdf_fn)
         message_parts = []
+        page_scales = {}  # Cache for similar page sizes
+
+        def calculate_tokens(width, height):
+            return (width * height) / 750
 
         for page in pdf.pages():
-            # Create a transformation matrix for rendering at the calculated scale
-            mat = fitz.Matrix(0.6, 0.6)
+            page_rect = page.rect
+            orig_width = page_rect.width
+            orig_height = page_rect.height
+            page_key = (orig_width, orig_height)
+
+            # Use cached scale as starting point if available
+            scale = page_scales.get(page_key, 1.0)
             
-            # Render the page to a pixmap
-            pix = page.get_pixmap(matrix=mat, alpha=False)
-            
-            # Convert pixmap to PIL Image
+            while True:
+                # Render with current scale
+                mat = fitz.Matrix(scale, scale)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                
+                # Check actual rendered dimensions
+                actual_tokens = calculate_tokens(pix.width, pix.height)
+                actual_long_edge = max(pix.width, pix.height)
+                
+                if actual_long_edge <= 1568 and actual_tokens <= 1600:
+                    # We found a good scale, cache it
+                    if page_key not in page_scales:
+                        page_scales[page_key] = scale
+                    break
+                
+                # Calculate new scale factor based on both constraints
+                if actual_long_edge > 1568:
+                    scale_factor = min(1568 / actual_long_edge, 0.9)
+                else:
+                    scale_factor = min(math.sqrt(1600 / actual_tokens), 0.9)
+                
+                scale *= scale_factor
+
+            # Convert to PIL Image
             img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
             
-            # Convert PIL Image to bytes
-            img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format='PNG')
-            img_byte_arr = img_byte_arr.getvalue()
-            
-            # Append the message parts
-            message_parts.append({"text": f"Page {page.number} of file '{pdf_fn}'"})
+            # Handle compression
+            quality = 95
+            while True:
+                buffer = io.BytesIO()
+                img.save(buffer, format="webp", quality=quality)
+                img_bytes = buffer.getvalue()
+                
+                if len(img_bytes) <= 5 * 1024 * 1024 or quality <= 20:
+                    break
+                    
+                quality = max(int(quality * 0.9), 20)
+
+            message_parts.append({"text": f"Page {page.number + 1} of file '{pdf_fn}'"})
             message_parts.append({"image": {
-                "format": "png",
-                "source": {"bytes": img_byte_arr}
+                "format": "webp",
+                "source": {"bytes": img_bytes}
             }})
 
         pdf.close()
-
         return message_parts
 
     def _encode_image(self, image_data):
