@@ -372,4 +372,4 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
         """)
         import_button.upload(import_history, inputs=[chatbot, import_button], outputs=[chatbot, system_prompt])
 
-demo.queue().launch()
+demo.queue(default_concurrency_limit = None).launch()
