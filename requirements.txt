@@ -1,6 +1,6 @@
-gradio == 5.1
+gradio == 5.6.0
 langchain
-boto3>1.35.68
+boto3 == 1.35.68
 lxml
 PyMuPDF
 RestrictedPython
