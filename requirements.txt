@@ -1,6 +1,6 @@
 gradio == 5.1
 langchain
-boto3>1.34.54
+boto3>1.35.68
 lxml
 PyMuPDF
 RestrictedPython

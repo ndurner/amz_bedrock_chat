@@ -32,28 +32,36 @@ class LLM:
         # AWS API requires strict user, assi, user, ... sequence
         lastTypeHuman = False
 
-        for human, assi in history:
-            if human:
+        for msg in history:
+            if msg['role'] == "user":
                 if lastTypeHuman:
                     last_msg = messages.pop()
                     user_msg_parts = last_msg["content"]
                 else:
                     user_msg_parts = []
 
-                if isinstance(human, tuple):
-                    user_msg_parts.extend(self._process_file(human[0]))
-                elif isinstance(human, gradio.Image):
-                    user_msg_parts.extend(self._process_file(human.value["path"]))
+                content = msg['content']
+                if isinstance(content, gradio.File):
+                    user_msg_parts.extend(self._process_file(content.value['path']))
+                elif isinstance(content, gradio.Image):
+                    user_msg_parts.extend(self._process_file(content.value["path"]))
                 else:
-                    user_msg_parts.extend([{"text": human}])
+                    user_msg_parts.extend([{"text": content}])
 
                 messages.append({"role": "user", "content": user_msg_parts})
                 lastTypeHuman = True
-            if assi:
-                messages.append({"role": "assistant", "content": [{"text": assi}]})
+            else:
+                messages.append({
+                    "role": "assistant",
+                    "content":[{"text": msg['content']}]
+                })
                 lastTypeHuman = False
         
-        user_msg_parts = []
+        if lastTypeHuman:
+            last_msg = messages.pop()
+            user_msg_parts = last_msg["content"]
+        else:
+            user_msg_parts = []
         if message["text"]:
             user_msg_parts.append({"text": message["text"]})
         if message["files"]:

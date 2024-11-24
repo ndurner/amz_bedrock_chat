@@ -8,6 +8,7 @@ from PIL import Image
 from settings_mgr import generate_download_settings_js, generate_upload_settings_js
 from llm import LLM, log_to_console
 from code_exec import eval_restricted_script
+from chat_export import import_history, get_export_js
 from botocore.config import Config
 
 dump_controls = False
@@ -146,45 +147,21 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
     except Exception as e:
         raise gr.Error(f"Error: {str(e)}")
 
-def import_history(history, file):
-    with open(file.name, mode="rb") as f:
-        content = f.read()
+def import_history_guarded(aws_access, aws_secret, aws_token, region, history, file):
+    # check credentials first
+    try:
+        sess = boto3.Session(
+            aws_access_key_id = aws_access,
+            aws_secret_access_key = aws_secret,
+            aws_session_token = aws_token,
+            region_name = region)
+        br = sess.client(service_name="bedrock")
+        br.list_foundation_models(byProvider="invalid")
+    except Exception as e:
+        raise gr.Error(f"Bedrock login error: {str(e)}")
 
-        if isinstance(content, bytes):
-            content = content.decode('utf-8', 'replace')
-        else:
-            content = str(content)
-
-    # Deserialize the JSON content
-    import_data = json.loads(content)
-
-    # Check if 'history' key exists for backward compatibility
-    if 'history' in import_data:
-        history = import_data['history']
-        system_prompt_value = import_data.get('system_prompt', '')  # Set default if not present
-    else:
-        # Assume it's an old format with only history data
-        history = import_data
-        system_prompt_value = ''
-
-    # Process the history to handle image data
-    processed_history = []
-    for pair in history:
-        processed_pair = []
-        for message in pair:
-            if isinstance(message, dict) and 'file' in message and 'data' in message['file']:
-                # Create a gradio.Image from the base64 data
-                image_data = base64.b64decode(message['file']['data'].split(',')[1])
-                img = Image.open(io.BytesIO(image_data))
-                gr_image = gr.Image(img)
-                processed_pair.append(gr_image)
-
-                gr.Warning("Reusing images across sessions is limited to one conversation turn")
-            else:
-                processed_pair.append(message)
-        processed_history.append(processed_pair)
-
-    return processed_history, system_prompt_value
+    # actual import
+    return import_history(history, file)
 
 def export_history(h, s):
     pass
@@ -253,7 +230,7 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
         dl_settings_button.click(None, controls, js=generate_download_settings_js("amz_chat_settings.bin", control_ids))
         ul_settings_button.click(None, None, None, js=generate_upload_settings_js(control_ids))
 
-    chat = gr.ChatInterface(fn=bot, multimodal=True, additional_inputs=controls, autofocus = False)
+    chat = gr.ChatInterface(fn=bot, multimodal=True, additional_inputs=controls, autofocus = False, type = "messages")
     chat.textbox.file_count = "multiple"
     chatbot = chat.chatbot
     chatbot.show_copy_button = True
@@ -268,53 +245,7 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
     with gr.Accordion("Import/Export", open = False):
         import_button = gr.UploadButton("History Import")
         export_button = gr.Button("History Export")
-        export_button.click(export_history, [chatbot, system_prompt], js="""
-            async (chat_history, system_prompt) => {
-                console.log('Chat History:', JSON.stringify(chat_history, null, 2));
-
-                async function fetchAndEncodeImage(url) {
-                    const response = await fetch(url);
-                    const blob = await response.blob();
-                    return new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result);
-                        reader.onerror = reject;
-                        reader.readAsDataURL(blob);
-                    });
-                }
-
-                const processedHistory = await Promise.all(chat_history.map(async (pair) => {
-                    return await Promise.all(pair.map(async (message) => {
-                        if (message && message.file && message.file.url) {
-                            const base64Image = await fetchAndEncodeImage(message.file.url);
-                            return {
-                                ...message,
-                                file: {
-                                    ...message.file,
-                                    data: base64Image
-                                }
-                            };
-                        }
-                        return message;
-                    }));
-                }));
-
-                const export_data = {
-                    history: processedHistory,
-                    system_prompt: system_prompt
-                };
-                const history_json = JSON.stringify(export_data);
-                const blob = new Blob([history_json], {type: 'application/json'});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'chat_history.json';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }
-        """)
+        export_button.click(lambda: None, [chatbot, system_prompt], js=get_export_js())
         dl_button = gr.Button("File download")
         dl_button.click(lambda: None, [chatbot], js="""
             (chat_history) => {
@@ -370,6 +301,7 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
                 }
             }
         """)
-        import_button.upload(import_history, inputs=[chatbot, import_button], outputs=[chatbot, system_prompt])
-
+        import_button.upload(import_history_guarded, 
+                            inputs=[aws_access, aws_secret, aws_token, region, chatbot, import_button], 
+                            outputs=[chatbot, system_prompt])
 demo.queue(default_concurrency_limit = None).launch()
