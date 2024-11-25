@@ -41,10 +41,10 @@ class LLM:
                     user_msg_parts = []
 
                 content = msg['content']
-                if isinstance(content, gradio.File):
+                if isinstance(content, gradio.File) or isinstance(content, gradio.Image):
                     user_msg_parts.extend(self._process_file(content.value['path']))
-                elif isinstance(content, gradio.Image):
-                    user_msg_parts.extend(self._process_file(content.value["path"]))
+                elif isinstance(content, tuple):
+                    user_msg_parts.extend(self._process_file(content[0]))
                 else:
                     user_msg_parts.extend([{"text": content}])
 
