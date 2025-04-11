@@ -167,6 +167,8 @@ def export_history(h, s):
     pass
 
 with gr.Blocks(delete_cache=(86400, 86400)) as demo:
+    settings_state = gr.BrowserState({})
+    
     gr.Markdown("# Amazon™️ Bedrock™️ Chat™️ (Nils' Version™️) feat. Mistral™️ AI & Anthropic™️ Claude™️")
 
     with gr.Accordion("Startup"):
@@ -180,7 +182,7 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
         aws_token = gr.Textbox(label="AWS Session Token", elem_id="aws_token")
         model = gr.Dropdown(label="Model", value="anthropic.claude-3-5-sonnet-20241022-v2:0", allow_custom_value=True, elem_id="model",
                             choices=["anthropic.claude-3-5-sonnet-20240620-v1:0", "anthropic.claude-3-opus-20240229-v1:0", "meta.llama3-1-405b-instruct-v1:0", "anthropic.claude-3-sonnet-20240229-v1:0", "anthropic.claude-3-haiku-20240307-v1:0", "anthropic.claude-v2:1", "anthropic.claude-v2",
-                                     "mistral.mistral-7b-instruct-v0:2", "mistral.mixtral-8x7b-instruct-v0:1", "mistral.mistral-large-2407-v1:0", "anthropic.claude-3-5-sonnet-20241022-v2:0"])
+                                     "mistral.mistral-7b-instruct-v0:2", "mistral.mixtral-8x7b-instruct-v0:1", "mistral.mistral-large-2407-v1:0", "anthropic.claude-3-5-sonnet-20241022-v2:0", "us.amazon.nova-pro-v1:0", "us.amazon.nova-lite-v1:0", "us.amazon.nova-micro-v1:0"])
         system_prompt = gr.TextArea("You are a helpful yet diligent AI assistant. Answer faithfully and factually correct. Respond with 'I do not know' if uncertain.", label="System Prompt", lines=3, max_lines=250, elem_id="system_prompt")  
         region = gr.Dropdown(label="Region", value="us-west-2", allow_custom_value=True, elem_id="region",
                             choices=["eu-central-1", "eu-west-3", "us-east-1", "us-west-1", "us-west-2"])
@@ -191,6 +193,46 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
         load_button = gr.Button("Load Settings")  
         dl_settings_button = gr.Button("Download Settings")
         ul_settings_button = gr.Button("Upload Settings")
+
+        @demo.load(inputs=[settings_state], 
+                outputs=[aws_access, aws_secret, aws_token, system_prompt, 
+                        temp, max_tokens, model, region, python_use])
+        def load_from_browser_storage(saved_values):
+            if not saved_values:
+                return (aws_access.value, aws_secret.value, aws_token.value, 
+                        system_prompt.value, temp.value, max_tokens.value,
+                        model.value, region.value, python_use.value)
+            return (saved_values.get('aws_access', aws_access.value), 
+                    saved_values.get('aws_secret', aws_secret.value), 
+                    saved_values.get('aws_token', aws_token.value), 
+                    saved_values.get('system_prompt', system_prompt.value),
+                    saved_values.get('temp', temp.value), 
+                    saved_values.get('max_tokens', max_tokens.value),
+                    saved_values.get('model', model.value), 
+                    saved_values.get('region', region.value),
+                    saved_values.get('python_use', python_use.value))
+
+        @gr.on(
+            [aws_access.change, aws_secret.change, aws_token.change, 
+             system_prompt.change, temp.change, max_tokens.change,
+             model.change, region.change, python_use.change],
+            inputs=[aws_access, aws_secret, aws_token, system_prompt, 
+                    temp, max_tokens, model, region, python_use],
+            outputs=[settings_state]
+        )
+        def save_to_browser_storage(acc, sec, tok, prompt, temperature, 
+                                tokens, mdl, reg, py_use):
+            return {
+                'aws_access': acc,
+                'aws_secret': sec,
+                'aws_token': tok,
+                'system_prompt': prompt,
+                'temp': temperature,
+                'max_tokens': tokens,
+                'model': mdl,
+                'region': reg,
+                'python_use': py_use
+            }
 
         load_button.click(load_settings, js="""  
             () => {  
