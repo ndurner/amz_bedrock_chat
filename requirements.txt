@@ -1,3 +1,4 @@
+pydantic == 2.10.6
 gradio == 5.4.0
 langchain
 boto3 == 1.35.68
