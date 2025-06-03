@@ -301,7 +301,11 @@ class LLM:
                 else:
                     content.append({'text': text})
             elif 'messageStop' in chunk or chunk.get('type') == 'message_stop':
-                stop_reason = chunk.get('messageStop', chunk).get('stopReason') or chunk.get('stop_reason')
+                stop_reason = (
+                    chunk.get('messageStop', chunk).get('stopReason')
+                    or chunk.get('stop_reason')
+                    or chunk.get('reason')
+                )
                 yield stop_reason, message
             elif 'metadata' in chunk and 'usage' in chunk['metadata'] and log_to_console:
                 metadata = chunk['metadata']

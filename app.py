@@ -96,6 +96,7 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
                 contentType = "application/json"
             )
 
+            stop_reason = None
             for stop_reason, message in llm.read_response(response.get('body')):
                 if isinstance(message, str):
                     whole_response += message
@@ -148,8 +149,12 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
                                         yield whole_response
 
                                     messages.append(tool_result_message)
+                        break
                     else:
                         return
+
+            if stop_reason != "tool_use":
+                break
 
     except Exception as e:
         raise gr.Error(f"Error: {str(e)}")
