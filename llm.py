@@ -276,13 +276,17 @@ class LLM:
                 else:
                     message['role'] = chunk['message']['role']
             elif 'contentBlockStart' in chunk or chunk.get('type') == 'content_block_start':
-                start = chunk.get('contentBlockStart', chunk.get('start'))
+                start = chunk.get('contentBlockStart') or chunk.get('start') or {}
                 tool = start.get('toolUse') or start.get('tool_use')
-                tool_use['toolUseId'] = tool['toolUseId']
-                tool_use['name'] = tool['name']
+                if tool:
+                    tool_use['toolUseId'] = tool.get('toolUseId')
+                    tool_use['name'] = tool.get('name')
             elif 'contentBlockDelta' in chunk or chunk.get('type') == 'content_block_delta':
-                delta = chunk.get('contentBlockDelta', chunk.get('delta'))['delta'] if 'contentBlockDelta' in chunk else chunk['delta']
-                if 'toolUse' in delta:
+                if 'contentBlockDelta' in chunk:
+                    delta = chunk['contentBlockDelta'].get('delta', {})
+                else:
+                    delta = chunk.get('delta', {})
+                if delta.get('toolUse'):
                     if 'input' not in tool_use:
                         tool_use['input'] = ''
                     tool_use['input'] += delta['toolUse']['input']
