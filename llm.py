@@ -45,14 +45,14 @@ class LLM:
                 elif isinstance(content, tuple):
                     user_msg_parts.extend(self._process_file(content[0]))
                 else:
-                    user_msg_parts.extend([{"text": content}])
+                    user_msg_parts.extend([{"type": "text", "text": content}])
 
                 messages.append({"role": "user", "content": user_msg_parts})
                 lastTypeHuman = True
             else:
                 messages.append({
                     "role": "assistant",
-                    "content":[{"text": msg['content']}]
+                    "content": [{"type": "text", "text": msg['content']}]
                 })
                 lastTypeHuman = False
         
@@ -64,7 +64,7 @@ class LLM:
         
         if message:
             if message["text"]:
-                user_msg_parts.append({"text": message["text"]})
+                user_msg_parts.append({"type": "text", "text": message["text"]})
             if message["files"]:
                 for file in message["files"]:
                     user_msg_parts.extend(self._process_file(file))
@@ -81,7 +81,7 @@ class LLM:
 
     def _encode_file(self, fn: str) -> list:
         if fn.endswith(".docx"):
-            return [{"text": process_docx(fn)}]
+            return [{"type": "text", "text": process_docx(fn)}]
         elif fn.endswith(".pdf"):
             return self._process_pdf_img(fn)
         else:
@@ -92,7 +92,7 @@ class LLM:
                 try:
                     # try to add as image
                     image_data = self._encode_image(content)
-                    return [{"image": image_data}]
+                    return [{"type": "image", "source": image_data}]
                 except:
                     # not an image, try text
                     content = content.decode('utf-8', 'replace')
@@ -100,7 +100,7 @@ class LLM:
                 content = str(content)
 
             fname = os.path.basename(fn)
-            return [{"text": f"``` {fname}\n{content}\n```"}]
+            return [{"type": "text", "text": f"``` {fname}\n{content}\n```"}]
 
     def _process_pdf_img(self, pdf_fn: str):
         pdf = fitz.open(pdf_fn)
@@ -157,11 +157,8 @@ class LLM:
                     
                 quality = max(int(quality * 0.9), 20)
 
-            message_parts.append({"text": f"Page {page.number + 1} of file '{pdf_fn}'"})
-            message_parts.append({"image": {
-                "format": "webp",
-                "source": {"bytes": img_bytes}
-            }})
+            message_parts.append({"type": "text", "text": f"Page {page.number + 1} of file '{pdf_fn}'"})
+            message_parts.append({"type": "image", "source": self._encode_image(img_bytes)})
 
         pdf.close()
         return message_parts
@@ -200,9 +197,11 @@ class LLM:
 
         # Check if the image already meets all requirements
         if format_ok and (long_edge <= 1568 and tokens <= 1600 and len(image_data) <= 5 * 1024 * 1024):
+            out_fmt = original_format
             return {
-                "format": original_format,
-                "source": {"bytes": image_data}
+                "type": "base64",
+                "media_type": f"image/{out_fmt}",
+                "data": base64.b64encode(image_data).decode('utf-8')
             }
 
         # If we need to modify the image, proceed with resizing and/or compression
@@ -246,10 +245,10 @@ class LLM:
                     new_height = int(img.height * scale_factor)
                     img = img.resize((new_width, new_height), Image.LANCZOS)
                     quality = 95  # Reset quality for the resized image
-
         return {
-            "format": "webp",
-            "source": {"bytes": image_data}
+            "type": "base64",
+            "media_type": f"image/{out_fmt}",
+            "data": base64.b64encode(image_data).decode('utf-8')
         }
 
     def read_response(self, response_stream):
