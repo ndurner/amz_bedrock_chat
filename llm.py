@@ -17,7 +17,6 @@ import gradio
 
 # constants
 log_to_console = False
-use_document_message_type = False  # AWS document message type usage
 
 LLMClass = TypeVar('LLMClass', bound='LLM')
 
@@ -46,14 +45,14 @@ class LLM:
                 elif isinstance(content, tuple):
                     user_msg_parts.extend(self._process_file(content[0]))
                 else:
-                    user_msg_parts.extend([{"text": content}])
+                    user_msg_parts.extend([{"type": "text", "text": content}])
 
                 messages.append({"role": "user", "content": user_msg_parts})
                 lastTypeHuman = True
             else:
                 messages.append({
                     "role": "assistant",
-                    "content":[{"text": msg['content']}]
+                    "content": [{"type": "text", "text": msg['content']}]
                 })
                 lastTypeHuman = False
         
@@ -65,7 +64,7 @@ class LLM:
         
         if message:
             if message["text"]:
-                user_msg_parts.append({"text": message["text"]})
+                user_msg_parts.append({"type": "text", "text": message["text"]})
             if message["files"]:
                 for file in message["files"]:
                     user_msg_parts.extend(self._process_file(file))
@@ -76,35 +75,13 @@ class LLM:
         return messages
 
     def _process_file(self, file_path):
-        if use_document_message_type and self._is_supported_document_type(file_path):
-            return [self._create_document_message(file_path)]
-        else:
-            return self._encode_file(file_path)
+        return self._encode_file(file_path)
 
-    def _is_supported_document_type(self, file_path):
-        supported_extensions = ['.pdf', '.csv', '.doc', '.docx', '.xls', '.xlsx', '.html', '.txt', '.md']
-        return os.path.splitext(file_path)[1].lower() in supported_extensions
 
-    def _create_document_message(self, file_path):
-        with open(file_path, 'rb') as file:
-            file_content = file.read()
-        
-        file_name = re.sub(r'[^a-zA-Z0-9\s\-\(\)\[\]]', '', os.path.basename(file_path))[:200].strip() or "unnamed_file"
-        file_extension = os.path.splitext(file_path)[1][1:]  # Remove the dot
-
-        return {
-            "document": {
-                "name": file_name,
-                "format": file_extension,
-                "source": {
-                    "bytes": file_content
-                }
-            }
-        }
 
     def _encode_file(self, fn: str) -> list:
         if fn.endswith(".docx"):
-            return [{"text": process_docx(fn)}]
+            return [{"type": "text", "text": process_docx(fn)}]
         elif fn.endswith(".pdf"):
             return self._process_pdf_img(fn)
         else:
@@ -115,7 +92,7 @@ class LLM:
                 try:
                     # try to add as image
                     image_data = self._encode_image(content)
-                    return [{"image": image_data}]
+                    return [{"type": "image", "source": image_data}]
                 except:
                     # not an image, try text
                     content = content.decode('utf-8', 'replace')
@@ -123,7 +100,7 @@ class LLM:
                 content = str(content)
 
             fname = os.path.basename(fn)
-            return [{"text": f"``` {fname}\n{content}\n```"}]
+            return [{"type": "text", "text": f"``` {fname}\n{content}\n```"}]
 
     def _process_pdf_img(self, pdf_fn: str):
         pdf = fitz.open(pdf_fn)
@@ -180,11 +157,8 @@ class LLM:
                     
                 quality = max(int(quality * 0.9), 20)
 
-            message_parts.append({"text": f"Page {page.number + 1} of file '{pdf_fn}'"})
-            message_parts.append({"image": {
-                "format": "webp",
-                "source": {"bytes": img_bytes}
-            }})
+            message_parts.append({"type": "text", "text": f"Page {page.number + 1} of file '{pdf_fn}'"})
+            message_parts.append({"type": "image", "source": self._encode_image(img_bytes)})
 
         pdf.close()
         return message_parts
@@ -223,9 +197,11 @@ class LLM:
 
         # Check if the image already meets all requirements
         if format_ok and (long_edge <= 1568 and tokens <= 1600 and len(image_data) <= 5 * 1024 * 1024):
+            out_fmt = original_format
             return {
-                "format": original_format,
-                "source": {"bytes": image_data}
+                "type": "base64",
+                "media_type": f"image/{out_fmt}",
+                "data": base64.b64encode(image_data).decode('utf-8')
             }
 
         # If we need to modify the image, proceed with resizing and/or compression
@@ -269,10 +245,10 @@ class LLM:
                     new_height = int(img.height * scale_factor)
                     img = img.resize((new_width, new_height), Image.LANCZOS)
                     quality = 95  # Reset quality for the resized image
-
         return {
-            "format": "webp",
-            "source": {"bytes": image_data}
+            "type": "base64",
+            "media_type": f"image/{out_fmt}",
+            "data": base64.b64encode(image_data).decode('utf-8')
         }
 
     def read_response(self, response_stream):
@@ -291,32 +267,48 @@ class LLM:
         stop_reason = None
 
         for chunk in response_stream:
-            if 'messageStart' in chunk:
-                message['role'] = chunk['messageStart']['role']
-            elif 'contentBlockStart' in chunk:
-                tool = chunk['contentBlockStart']['start']['toolUse']
-                tool_use['toolUseId'] = tool['toolUseId']
-                tool_use['name'] = tool['name']
-            elif 'contentBlockDelta' in chunk:
-                delta = chunk['contentBlockDelta']['delta']
-                if 'toolUse' in delta:
+            if 'chunk' in chunk:
+                chunk = json.loads(chunk['chunk']['bytes'])
+
+            if 'messageStart' in chunk or chunk.get('type') == 'message_start':
+                if 'messageStart' in chunk:
+                    message['role'] = chunk['messageStart']['role']
+                else:
+                    message['role'] = chunk['message']['role']
+            elif 'contentBlockStart' in chunk or chunk.get('type') == 'content_block_start':
+                start = chunk.get('contentBlockStart') or chunk.get('start') or {}
+                tool = start.get('toolUse') or start.get('tool_use')
+                if tool:
+                    tool_use['toolUseId'] = tool.get('toolUseId')
+                    tool_use['name'] = tool.get('name')
+            elif 'contentBlockDelta' in chunk or chunk.get('type') == 'content_block_delta':
+                if 'contentBlockDelta' in chunk:
+                    delta = chunk['contentBlockDelta'].get('delta', {})
+                else:
+                    delta = chunk.get('delta', {})
+                if delta.get('toolUse'):
                     if 'input' not in tool_use:
                         tool_use['input'] = ''
                     tool_use['input'] += delta['toolUse']['input']
                 elif 'text' in delta:
                     text += delta['text']
                     yield None, delta['text']
-            elif 'contentBlockStop' in chunk:
+            elif 'contentBlockStop' in chunk or chunk.get('type') == 'content_block_stop':
                 if 'input' in tool_use:
                     tool_use['input'] = json.loads(tool_use['input'])
                     content.append({'toolUse': tool_use})
                     tool_use = {}
                 else:
                     content.append({'text': text})
-            elif 'messageStop' in chunk:
-                stop_reason = chunk['messageStop']['stopReason']
+            elif 'messageStop' in chunk or chunk.get('type') == 'message_stop':
+                stop_reason = (
+                    chunk.get('messageStop', chunk).get('stopReason')
+                    or chunk.get('stop_reason')
+                    or chunk.get('reason')
+                )
                 yield stop_reason, message
             elif 'metadata' in chunk and 'usage' in chunk['metadata'] and log_to_console:
+                metadata = chunk['metadata']
                 print("\nToken usage:")
                 print(f"Input tokens: {metadata['usage']['inputTokens']}")
                 print(f"Output tokens: {metadata['usage']['outputTokens']}")

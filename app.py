@@ -35,7 +35,7 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
     try:
         llm = LLM.create_llm(model)
         messages = llm.generate_body(message, history)
-        sys_prompt = [{"text": system_prompt}] if system_prompt else []
+        sys_prompt = system_prompt
 
         config = Config(
             read_timeout = 600,
@@ -78,18 +78,26 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
 
         whole_response = ""
         while True:
-            response = br.converse_stream(
+            body_dict = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if sys_prompt:
+                body_dict["system"] = sys_prompt
+            if python_use:
+                body_dict.update(tool_config)
+
+            response = br.invoke_model_with_response_stream(
                 modelId = model,
-                messages = messages,
-                system = sys_prompt,
-                inferenceConfig = {
-                    "temperature": temperature,
-                    "maxTokens": max_tokens,
-                },
-                **({'toolConfig': tool_config} if python_use else {})
+                body = json.dumps(body_dict),
+                accept = "application/json",
+                contentType = "application/json"
             )
 
-            for stop_reason, message in llm.read_response(response.get('stream')):
+            stop_reason = None
+            for stop_reason, message in llm.read_response(response.get('body')):
                 if isinstance(message, str):
                     whole_response += message
                     yield whole_response
@@ -141,8 +149,12 @@ def bot(message, history, aws_access, aws_secret, aws_token, system_prompt, temp
                                         yield whole_response
 
                                     messages.append(tool_result_message)
+                        break
                     else:
                         return
+
+            if stop_reason != "tool_use":
+                break
 
     except Exception as e:
         raise gr.Error(f"Error: {str(e)}")
@@ -274,6 +286,7 @@ with gr.Blocks(delete_cache=(86400, 86400)) as demo:
 
     chat = gr.ChatInterface(fn=bot, multimodal=True, additional_inputs=controls, autofocus = False, type = "messages")
     chat.textbox.file_count = "multiple"
+    chat.textbox.max_plain_text_length = 2**31
     chatbot = chat.chatbot
     chatbot.show_copy_button = True
     chatbot.height = 450
